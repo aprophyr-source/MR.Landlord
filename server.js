@@ -23,6 +23,14 @@ const SettingsSchema = new mongoose.Schema({
 });
 const Settings = mongoose.model('Settings', SettingsSchema);
 
+const HistoryItemSchema = new mongoose.Schema({
+    date: String,
+    note: String,
+    amount: Number,
+    type: { type: String },
+    collector: String
+}, { _id: false });
+
 const TenantSchema = new mongoose.Schema({
     name: String,
     room: String,
@@ -30,13 +38,7 @@ const TenantSchema = new mongoose.Schema({
     monthly_rent: { type: Number, default: 0 },
     due: { type: Number, default: 0 },
     advance: { type: Number, default: 0 },
-    history: [{
-        date: String,
-        note: String,
-        amount: Number,
-        type: String,
-        collector: String
-    }]
+    history: [HistoryItemSchema]
 });
 const Tenant = mongoose.model('Tenant', TenantSchema);
 
@@ -123,9 +125,9 @@ app.post('/tenant/:id/transaction', async (req, res) => {
     if (!tenant) return res.redirect('/app');
 
     const numAmount = parseInt(req.body.amount) || 0;
-    const type = req.body.type;
+    const txType = req.body.type;
 
-    if (type === 'payment') {
+    if (txType === 'payment') {
         if (tenant.due >= numAmount) {
             tenant.due -= numAmount;
         } else {
@@ -142,7 +144,7 @@ app.post('/tenant/:id/transaction', async (req, res) => {
         date: todayStr,
         note: req.body.note,
         amount: numAmount,
-        type: type,
+        type: txType,
         collector: req.body.collector
     });
 
