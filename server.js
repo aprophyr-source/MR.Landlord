@@ -38,9 +38,108 @@ const TenantSchema = new mongoose.Schema({
     monthly_rent: { type: Number, default: 0 },
     due: { type: Number, default: 0 },
     advance: { type: Number, default: 0 },
+    last_rent_month: { type: String, default: "" }, // Format: "YYYY-MM"
     history: [HistoryItemSchema]
 });
 const Tenant = mongoose.model('Tenant', TenantSchema);
+
+// Helper: Current Year-Month in IST (e.g. "2026-10")
+const getCurrentYearMonth = () => {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// Helper: Add a charge/due and automatically cancel out any existing Advance first
+const applyCharge = (tenant, chargeAmount) => {
+    if (tenant.advance > 0) {
+        if (tenant.advance >= chargeAmount) {
+            tenant.advance -= chargeAmount;
+        } else {
+            const remainingDue = chargeAmount - tenant.advance;
+            tenant.advance = 0;
+            tenant.due += remainingDue;
+        }
+    } else {
+        tenant.due += chargeAmount;
+    }
+};
+
+// Helper: Add a payment/advance and automatically pay off any existing Due first
+const applyPayment = (tenant, paymentAmount) => {
+    if (tenant.due > 0) {
+        if (tenant.due >= paymentAmount) {
+            tenant.due -= paymentAmount;
+        } else {
+            const extraAdvance = paymentAmount - tenant.due;
+            tenant.due = 0;
+            tenant.advance += extraAdvance;
+        }
+    } else {
+        tenant.advance += paymentAmount;
+    }
+};
+
+// Helper: Reconcile any existing stuck balances where both due > 0 and advance > 0
+const reconcileExistingBalance = (tenant) => {
+    if (tenant.due > 0 && tenant.advance > 0) {
+        if (tenant.advance >= tenant.due) {
+            tenant.advance -= tenant.due;
+            tenant.due = 0;
+        } else {
+            tenant.due -= tenant.advance;
+            tenant.advance = 0;
+        }
+        return true;
+    }
+    return false;
+};
+
+// Automatic Monthly Rent Engine: Checks if a new month has started and adds monthly_rent
+const syncMonthlyRent = async () => {
+    const currentYM = getCurrentYearMonth();
+    const [curYear, curMonth] = currentYM.split('-').map(Number);
+    const tenants = await Tenant.find();
+
+    for (const tenant of tenants) {
+        let modified = reconcileExistingBalance(tenant);
+
+        if (!tenant.last_rent_month) {
+            // Initialize existing tenants to current month so they aren't double-charged mid-month
+            tenant.last_rent_month = currentYM;
+            modified = true;
+        } else if (tenant.last_rent_month < currentYM && tenant.monthly_rent > 0) {
+            let [lastYear, lastMonth] = tenant.last_rent_month.split('-').map(Number);
+
+            while (lastYear < curYear || (lastYear === curYear && lastMonth < curMonth)) {
+                lastMonth++;
+                if (lastMonth > 12) {
+                    lastMonth = 1;
+                    lastYear++;
+                }
+
+                const monthDate = new Date(lastYear, lastMonth - 1, 1);
+                const monthLabel = monthDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+                const dateStr = monthDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+                applyCharge(tenant, tenant.monthly_rent);
+
+                tenant.history.push({
+                    date: dateStr,
+                    note: `Auto Monthly Rent (${monthLabel})`,
+                    amount: tenant.monthly_rent,
+                    type: 'charge',
+                    collector: 'System Auto'
+                });
+            }
+            tenant.last_rent_month = currentYM;
+            modified = true;
+        }
+
+        if (modified) {
+            await tenant.save();
+        }
+    }
+};
 
 // Helper to normalize `_id` to `id` for EJS templates
 const formatDoc = (doc) => {
@@ -57,6 +156,7 @@ app.get('/', async (req, res) => {
         if (!settings) {
             res.render('setup');
         } else {
+            await syncMonthlyRent();
             const rawTenants = await Tenant.find();
             const tenants = rawTenants.map(formatDoc);
             res.render('login', { settings, tenants, error: null });
@@ -75,6 +175,7 @@ app.post('/setup', async (req, res) => {
 });
 
 app.post('/dashboard', async (req, res) => {
+    await syncMonthlyRent();
     const settings = await Settings.findOne();
     const rawTenants = await Tenant.find();
     const tenants = rawTenants.map(formatDoc);
@@ -86,6 +187,7 @@ app.post('/dashboard', async (req, res) => {
 });
 
 app.get('/app', async (req, res) => {
+    await syncMonthlyRent();
     const settings = await Settings.findOne();
     const rawTenants = await Tenant.find();
     const tenants = rawTenants.map(formatDoc);
@@ -100,6 +202,7 @@ app.post('/tenant/add', async (req, res) => {
         monthly_rent: parseInt(req.body.monthly_rent) || 0,
         due: parseInt(req.body.initial_due) || 0,
         advance: 0,
+        last_rent_month: getCurrentYearMonth(),
         history: []
     });
     res.redirect('/app');
@@ -111,6 +214,7 @@ app.post('/tenant/delete/:id', async (req, res) => {
 });
 
 app.get('/tenant/:id', async (req, res) => {
+    await syncMonthlyRent();
     const settings = await Settings.findOne();
     const rawTenants = await Tenant.find();
     const tenants = rawTenants.map(formatDoc);
@@ -124,22 +228,18 @@ app.post('/tenant/:id/transaction', async (req, res) => {
     const tenant = await Tenant.findById(req.params.id);
     if (!tenant) return res.redirect('/app');
 
+    reconcileExistingBalance(tenant);
+
     const numAmount = parseInt(req.body.amount) || 0;
     const txType = req.body.type;
 
     if (txType === 'payment') {
-        if (tenant.due >= numAmount) {
-            tenant.due -= numAmount;
-        } else {
-            let remainder = numAmount - tenant.due;
-            tenant.due = 0;
-            tenant.advance += remainder;
-        }
+        applyPayment(tenant, numAmount);
     } else {
-        tenant.due += numAmount;
+        applyCharge(tenant, numAmount);
     }
 
-    const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
     tenant.history.push({
         date: todayStr,
         note: req.body.note,
