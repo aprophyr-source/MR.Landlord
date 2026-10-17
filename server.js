@@ -1,5 +1,5 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const mongoose = require('mongoose');
 const path = require('path');
 
 const app = express();
@@ -10,116 +10,146 @@ app.use(express.json());
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-const dbFile = path.join(__dirname, 'rental.db');
-const db = new sqlite3.Database(dbFile);
+// Connect to Permanent MongoDB Atlas Cloud Database
+const MONGO_URI = process.env.MONGO_URI;
+mongoose.connect(MONGO_URI)
+    .then(() => console.log("Connected to Permanent Cloud Database!"))
+    .catch(err => console.error("Database connection error:", err));
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY AUTOINCREMENT, passcode TEXT, landlord_name TEXT)`);
-    db.run(`CREATE TABLE IF NOT EXISTS tenants (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, room TEXT, phone TEXT, monthly_rent INTEGER DEFAULT 0, due INTEGER DEFAULT 0, advance INTEGER DEFAULT 0)`);
-    db.run(`CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, tenant_id INTEGER, date TEXT, note TEXT, amount INTEGER, type TEXT, collector TEXT)`);
+// Cloud Schemas
+const SettingsSchema = new mongoose.Schema({
+    passcode: String,
+    landlord_name: String
 });
+const Settings = mongoose.model('Settings', SettingsSchema);
 
-app.get('/', (req, res) => {
-    db.get(`SELECT * FROM settings LIMIT 1`, (err, settings) => {
+const TenantSchema = new mongoose.Schema({
+    name: String,
+    room: String,
+    phone: String,
+    monthly_rent: { type: Number, default: 0 },
+    due: { type: Number, default: 0 },
+    advance: { type: Number, default: 0 },
+    history: [{
+        date: String,
+        note: String,
+        amount: Number,
+        type: String,
+        collector: String
+    }]
+});
+const Tenant = mongoose.model('Tenant', TenantSchema);
+
+// Helper to normalize `_id` to `id` for EJS templates
+const formatDoc = (doc) => {
+    if (!doc) return null;
+    const obj = doc.toObject();
+    obj.id = obj._id.toString();
+    return obj;
+};
+
+// Routes
+app.get('/', async (req, res) => {
+    try {
+        const settings = await Settings.findOne();
         if (!settings) {
             res.render('setup');
         } else {
-            db.all(`SELECT * FROM tenants`, (err, tenants) => {
-                res.render('login', { settings, tenants: tenants || [] });
-            });
+            const rawTenants = await Tenant.find();
+            const tenants = rawTenants.map(formatDoc);
+            res.render('login', { settings, tenants, error: null });
         }
-    });
+    } catch (err) {
+        res.status(500).send("Database starting up... please refresh in 5 seconds.");
+    }
 });
 
-app.post('/setup', (req, res) => {
-    const { passcode, landlord_name } = req.body;
-    db.run(`INSERT INTO settings (passcode, landlord_name) VALUES (?, ?)`, [passcode, landlord_name], () => {
-        res.redirect('/');
+app.post('/setup', async (req, res) => {
+    await Settings.create({
+        passcode: req.body.passcode,
+        landlord_name: req.body.landlord_name
     });
+    res.redirect('/');
 });
 
-app.post('/dashboard', (req, res) => {
-    const { passcode } = req.body;
-    db.get(`SELECT * FROM settings LIMIT 1`, (err, settings) => {
-        if (settings && settings.passcode === passcode) {
-            db.all(`SELECT * FROM tenants`, (err, tenants) => {
-                res.render('dashboard', { settings, tenants, activeTenant: null });
-            });
+app.post('/dashboard', async (req, res) => {
+    const settings = await Settings.findOne();
+    const rawTenants = await Tenant.find();
+    const tenants = rawTenants.map(formatDoc);
+    if (settings && settings.passcode === req.body.passcode) {
+        res.render('dashboard', { settings, tenants, activeTenant: null, history: [] });
+    } else {
+        res.render('login', { error: 'Incorrect Passcode / गलत पासकोड', settings, tenants });
+    }
+});
+
+app.get('/app', async (req, res) => {
+    const settings = await Settings.findOne();
+    const rawTenants = await Tenant.find();
+    const tenants = rawTenants.map(formatDoc);
+    res.render('dashboard', { settings, tenants, activeTenant: null, history: [] });
+});
+
+app.post('/tenant/add', async (req, res) => {
+    await Tenant.create({
+        name: req.body.name,
+        room: req.body.room,
+        phone: req.body.phone,
+        monthly_rent: parseInt(req.body.monthly_rent) || 0,
+        due: parseInt(req.body.initial_due) || 0,
+        advance: 0,
+        history: []
+    });
+    res.redirect('/app');
+});
+
+app.post('/tenant/delete/:id', async (req, res) => {
+    await Tenant.findByIdAndDelete(req.params.id);
+    res.redirect('/app');
+});
+
+app.get('/tenant/:id', async (req, res) => {
+    const settings = await Settings.findOne();
+    const rawTenants = await Tenant.find();
+    const tenants = rawTenants.map(formatDoc);
+    const rawActive = await Tenant.findById(req.params.id);
+    const activeTenant = formatDoc(rawActive);
+    const history = activeTenant ? [...activeTenant.history].reverse() : [];
+    res.render('dashboard', { settings, tenants, activeTenant, history });
+});
+
+app.post('/tenant/:id/transaction', async (req, res) => {
+    const tenant = await Tenant.findById(req.params.id);
+    if (!tenant) return res.redirect('/app');
+
+    const numAmount = parseInt(req.body.amount) || 0;
+    const type = req.body.type;
+
+    if (type === 'payment') {
+        if (tenant.due >= numAmount) {
+            tenant.due -= numAmount;
         } else {
-            db.render('login', { error: 'Incorrect Passcode / गलत पासकोड', settings });
+            let remainder = numAmount - tenant.due;
+            tenant.due = 0;
+            tenant.advance += remainder;
         }
+    } else {
+        tenant.due += numAmount;
+    }
+
+    const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    tenant.history.push({
+        date: todayStr,
+        note: req.body.note,
+        amount: numAmount,
+        type: type,
+        collector: req.body.collector
     });
-});
 
-app.post('/tenant/add', (req, res) => {
-    const { name, room, phone, monthly_rent, initial_due } = req.body;
-    db.run(`INSERT INTO tenants (name, room, phone, monthly_rent, due, advance) VALUES (?, ?, ?, ?, ?, 0)`,
-        [name, room, phone, monthly_rent || 0, initial_due || 0], () => {
-            res.redirect('/app');
-        });
-});
-
-app.post('/tenant/delete/:id', (req, res) => {
-    const id = req.params.id;
-    db.run(`DELETE FROM tenants WHERE id = ?`, [id], () => {
-        db.run(`DELETE FROM history WHERE tenant_id = ?`, [id], () => {
-            res.redirect('/app');
-        });
-    });
-});
-
-app.get('/app', (req, res) => {
-    db.get(`SELECT * FROM settings LIMIT 1`, (err, settings) => {
-        db.all(`SELECT * FROM tenants`, (err, tenants) => {
-            res.render('dashboard', { settings, tenants, activeTenant: null });
-        });
-    });
-});
-
-app.get('/tenant/:id', (req, res) => {
-    const tenantId = req.params.id;
-    db.get(`SELECT * FROM settings LIMIT 1`, (err, settings) => {
-        db.all(`SELECT * FROM tenants`, (err, tenants) => {
-            db.get(`SELECT * FROM tenants WHERE id = ?`, [tenantId], (err, activeTenant) => {
-                db.all(`SELECT * FROM history WHERE tenant_id = ? ORDER BY id DESC`, [tenantId], (err, history) => {
-                    res.render('dashboard', { settings, tenants, activeTenant, history: history || [] });
-                });
-            });
-        });
-    });
-});
-
-app.post('/tenant/:id/transaction', (req, res) => {
-    const tenantId = req.params.id;
-    const { amount, type, collector, note } = req.body;
-    const numAmount = parseInt(amount);
-
-    db.get(`SELECT * FROM tenants WHERE id = ?`, [tenantId], (err, tenant) => {
-        let newDue = tenant.due;
-        let newAdvance = tenant.advance;
-
-        if (type === 'payment') {
-            if (newDue >= numAmount) {
-                newDue -= numAmount;
-            } else {
-                let remainder = numAmount - newDue;
-                newDue = 0;
-                newAdvance += remainder;
-            }
-        } else {
-            newDue += numAmount;
-        }
-
-        db.run(`UPDATE tenants SET due = ?, advance = ? WHERE id = ?`, [newDue, newAdvance, tenantId], () => {
-            const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-            db.run(`INSERT INTO history (tenant_id, date, note, amount, type, collector) VALUES (?, ?, ?, ?, ?, ?)`,
-                [tenantId, todayStr, note, numAmount, type, collector], () => {
-                    res.redirect(`/tenant/${tenantId}?invoice=true&amt=${numAmount}&note=${encodeURIComponent(note)}&col=${encodeURIComponent(collector)}&due=${newDue}`);
-                });
-        });
-    });
+    await tenant.save();
+    res.redirect(`/tenant/${tenant._id}?invoice=true&amt=${numAmount}&note=${encodeURIComponent(req.body.note)}&col=${encodeURIComponent(req.body.collector)}&due=${tenant.due}`);
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+    console.log(`Cloud server running on port ${PORT}`);
 });
