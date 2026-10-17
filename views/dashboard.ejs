@@ -1,64 +1,182 @@
-<!-- Transaction Form -->
-<form action="/tenant/<%= activeTenant.id %>/transaction" method="POST" class="space-y-3">
-    <div>
-        <label class="block text-xs font-bold text-gray-700 mb-1">Amount (₹) / राशि</label>
-        <input type="number" name="amount" required placeholder="e.g. 2000" class="w-full px-2.5 py-1.5 border rounded text-xs">
-    </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MR.Landlord Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800">
 
-    <div>
-        <label class="block text-xs font-bold text-gray-700 mb-1">Type / प्रकार</label>
-        <select name="type" class="w-full px-2.5 py-1.5 border rounded text-xs bg-white font-bold">
-            <option value="payment">Payment Received (Due Clear / Advance)</option>
-            <option value="charge">Add Rent / Extra Charge (+ Due)</option>
-        </select>
-    </div>
+    <!-- Top Header Bar -->
+    <header class="bg-blue-600 text-white shadow-md py-3 px-4 flex justify-between items-center">
+        <h1 class="text-base font-bold">🏠 MR.Landlord / <%= settings.landlord_name %></h1>
+        <a href="/app" class="bg-blue-700 hover:bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Home / होम</a>
+    </header>
 
-    <div>
-        <label class="block text-xs font-bold text-gray-700 mb-1">Collected By / किसने लिया</label>
-        <select name="collector" class="w-full px-2.5 py-1.5 border rounded text-xs bg-white font-bold text-blue-800">
-            <option value="Amal">Amal / अमल</option>
-            <option value="Krishna">Krishna / कृष्णा</option>
-            <option value="Abhishek">Abhishek / अभिषेक</option>
-            <option value="Abhijeet">Abhijeet / अभिजीत</option>
-        </select>
-    </div>
+    <div class="max-w-4xl mx-auto p-3 grid grid-cols-1 md:grid-cols-3 gap-4">
+        
+        <!-- Left Column: Tenant List -->
+        <div class="bg-white p-3 rounded-lg shadow border">
+            <h2 class="text-sm font-bold text-gray-700 mb-2 border-bottom pb-1">Tenants / किराएदार</h2>
+            
+            <!-- Add Tenant Form -->
+            <form action="/tenant/add" method="POST" class="mb-3 space-y-2 bg-gray-50 p-2 rounded border">
+                <input type="text" name="name" required placeholder="Tenant Name / नाम" class="w-full px-2 py-1 border rounded text-xs">
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="text" name="room" required placeholder="Room / कमरा" class="w-full px-2 py-1 border rounded text-xs">
+                    <input type="text" name="phone" placeholder="Phone / फोन" class="w-full px-2 py-1 border rounded text-xs">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <input type="number" name="monthly_rent" required placeholder="Monthly Rent / किराया" class="w-full px-2 py-1 border rounded text-xs">
+                    <input type="number" name="initial_due" placeholder="Initial Due / बकाया" class="w-full px-2 py-1 border rounded text-xs">
+                </div>
+                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 rounded text-xs">
+                    + Add Tenant / नया किराएदार जोड़ें
+                </button>
+            </form>
 
-    <!-- Date, Month, Year Selectors -->
-    <div>
-        <label class="block text-xs font-bold text-gray-700 mb-1">Transaction Date / लेनदेन की तिथि</label>
-        <div class="grid grid-cols-3 gap-1.5">
-            <!-- Date Dropdown (1 to 31) -->
-            <select name="tx_date" class="px-2 py-1.5 border rounded text-xs bg-white font-bold">
-                <% for(let d=1; d<=31; d++) { %>
-                    <option value="<%= d %>" <%= d === new Date().getDate() ? 'selected' : '' %>><%= d %></option>
+            <!-- Tenant Selection List -->
+            <div class="space-y-1.5 max-h-96 overflow-y-auto">
+                <% if (tenants.length === 0) { %>
+                    <p class="text-xs text-gray-500 text-center py-4">No tenants added yet.</p>
                 <% } %>
-            </select>
-
-            <!-- Month Dropdown -->
-            <select name="tx_month" class="px-2 py-1.5 border rounded text-xs bg-white font-bold">
-                <% const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]; %>
-                <% const curMonthIdx = new Date().getMonth(); %>
-                <% months.forEach((m, idx) => { %>
-                    <option value="<%= m %>" <%= idx === curMonthIdx ? 'selected' : '' %>><%= m %></option>
+                <% tenants.forEach(t => { %>
+                    <a href="/tenant/<%= t.id %>" class="block p-2 rounded border transition <%= activeTenant && activeTenant.id === t.id ? 'bg-blue-50 border-blue-500 font-bold' : 'bg-white hover:bg-gray-50' %>">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-blue-900"><%= t.name %> (<%= t.room %>)</span>
+                            <% if (t.due > 0) { %>
+                                <span class="text-red-600 font-bold">Due: ₹<%= t.due %></span>
+                            <% } else if (t.advance > 0) { %>
+                                <span class="text-green-600 font-bold">Adv: ₹<%= t.advance %></span>
+                            <% } else { %>
+                                <span class="text-gray-500">Clear</span>
+                            <% } %>
+                        </div>
+                    </a>
                 <% }) %>
-            </select>
-
-            <!-- Year Dropdown (2020 to 2100) -->
-            <select name="tx_year" class="px-2 py-1.5 border rounded text-xs bg-white font-bold">
-                <% const curYear = new Date().getFullYear(); %>
-                <% for(let y=2020; y<=2100; y++) { %>
-                    <option value="<%= y %>" <%= y === curYear ? 'selected' : '' %>><%= y %></option>
-                <% } %>
-            </select>
+            </div>
         </div>
+
+        <!-- Right Column: Active Tenant Details & Transactions -->
+        <div class="md:col-span-2">
+            <% if (activeTenant) { %>
+                <div class="bg-white p-4 rounded-lg shadow border relative">
+                    
+                    <!-- Delete Tenant Button -->
+                    <form action="/tenant/delete/<%= activeTenant.id %>" method="POST" onsubmit="return confirm('Delete tenant?');" class="absolute top-3 right-3">
+                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs font-bold">Delete</button>
+                    </form>
+
+                    <div class="mb-3">
+                        <span class="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded">Room <%= activeTenant.room %></span>
+                        <h2 class="text-lg font-bold text-blue-900 mt-1"><%= activeTenant.name %></h2>
+                        <p class="text-xs text-gray-500">Phone: <%= activeTenant.phone || 'N/A' %> | Monthly Rent: ₹<%= activeTenant.monthly_rent %></p>
+                    </div>
+
+                    <!-- Balance Cards -->
+                    <div class="grid grid-cols-2 gap-3 mb-4">
+                        <div class="bg-red-50 border border-red-200 p-2.5 rounded text-center">
+                            <span class="text-xs font-bold text-red-700 block">Total Due / कुल बकाया</span>
+                            <span class="text-lg font-extrabold text-red-600">₹<%= activeTenant.due %></span>
+                        </div>
+                        <div class="bg-green-50 border border-green-200 p-2.5 rounded text-center">
+                            <span class="text-xs font-bold text-green-700 block">Advance / एडवांस</span>
+                            <span class="text-lg font-extrabold text-green-600">₹<%= activeTenant.advance %></span>
+                        </div>
+                    </div>
+
+                    <!-- Transaction Form with Date Dropdowns -->
+                    <div class="bg-gray-50 p-3 rounded border mb-4">
+                        <h3 class="text-xs font-bold text-gray-700 uppercase mb-2">Record Transaction / लेन-देन दर्ज करें</h3>
+                        <form action="/tenant/<%= activeTenant.id %>/transaction" method="POST" class="space-y-3">
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Amount (₹) / राशि</label>
+                                <input type="number" name="amount" required placeholder="e.g. 2000" class="w-full px-2.5 py-1.5 border rounded text-xs">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Type / प्रकार</label>
+                                <select name="type" class="w-full px-2.5 py-1.5 border rounded text-xs bg-white font-bold">
+                                    <option value="payment">Payment Received (Due Clear / Advance)</option>
+                                    <option value="charge">Add Rent / Extra Charge (+ Due)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Collected By / किसने लिया</label>
+                                <select name="collector" class="w-full px-2.5 py-1.5 border rounded text-xs bg-white font-bold text-blue-800">
+                                    <option value="Amal">Amal / अमल</option>
+                                    <option value="Krishna">Krishna / कृष्णा</option>
+                                    <option value="Abhishek">Abhishek / अभिषेक</option>
+                                    <option value="Abhijeet">Abhijeet / अभिजीत</option>
+                                </select>
+                            </div>
+
+                            <!-- Date, Month, Year Selectors -->
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Transaction Date / लेनदेन की तिथि</label>
+                                <div class="grid grid-cols-3 gap-1.5">
+                                    <select name="tx_date" class="px-2 py-1.5 border rounded text-xs bg-white font-bold">
+                                        <% for(let d=1; d<=31; d++) { %>
+                                            <option value="<%= d %>" <%= d === new Date().getDate() ? 'selected' : '' %>><%= d %></option>
+                                        <% } %>
+                                    </select>
+                                    <select name="tx_month" class="px-2 py-1.5 border rounded text-xs bg-white font-bold">
+                                        <% const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]; %>
+                                        <% const curMonthIdx = new Date().getMonth(); %>
+                                        <% months.forEach((m, idx) => { %>
+                                            <option value="<%= m %>" <%= idx === curMonthIdx ? 'selected' : '' %>><%= m %></option>
+                                        <% }) %>
+                                    </select>
+                                    <select name="tx_year" class="px-2 py-1.5 border rounded text-xs bg-white font-bold">
+                                        <% const curYear = new Date().getFullYear(); %>
+                                        <% for(let y=2020; y<=2100; y++) { %>
+                                            <option value="<%= y %>" <%= y === curYear ? 'selected' : '' %>><%= y %></option>
+                                        <% } %>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-700 mb-1">Note / विवरण (Optional)</label>
+                                <input type="text" name="note" placeholder="e.g. October Rent / बिजली बिल" class="w-full px-2.5 py-1.5 border rounded text-xs">
+                            </div>
+
+                            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded text-xs shadow">
+                                Submit & Generate Invoice
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Transaction History -->
+                    <h3 class="text-xs font-bold text-gray-700 uppercase mb-2">History / इतिहास</h3>
+                    <div class="space-y-1.5 max-h-56 overflow-y-auto">
+                        <% if (history.length === 0) { %>
+                            <p class="text-xs text-gray-400 text-center py-2">No transaction history yet.</p>
+                        <% } %>
+                        <% history.forEach(h => { %>
+                            <div class="p-2 rounded border text-xs flex justify-between items-center <%= h.type === 'payment' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200' %>">
+                                <div>
+                                    <span class="font-bold block"><%= h.date %> — <%= h.note || (h.type === 'payment' ? 'Payment' : 'Charge') %></span>
+                                    <span class="text-gray-500 text-[10px]">Collector: <%= h.collector %></span>
+                                </div>
+                                <span class="font-extrabold <%= h.type === 'payment' ? 'text-green-700' : 'text-red-700' %>">
+                                    <%= h.type === 'payment' ? '-' : '+' %>₹<%= h.amount %>
+                                </span>
+                            </div>
+                        <% }) %>
+                    </div>
+
+                </div>
+            <% } else { %>
+                <div class="bg-white p-8 rounded-lg shadow border text-center text-gray-400">
+                    <p class="text-sm">👈 Select a tenant from the left list to view ledger and record transactions.</p>
+                </div>
+            <% } %>
+        </div>
+
     </div>
 
-    <div>
-        <label class="block text-xs font-bold text-gray-700 mb-1">Note / विवरण (Optional)</label>
-        <input type="text" name="note" placeholder="e.g. October Rent / बिजली बिल" class="w-full px-2.5 py-1.5 border rounded text-xs">
-    </div>
-
-    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded text-xs shadow">
-        Submit & Generate Invoice
-    </button>
-</form>
+</body>
+</html>
