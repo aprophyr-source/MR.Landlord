@@ -239,17 +239,24 @@ app.post('/tenant/:id/transaction', async (req, res) => {
         applyCharge(tenant, numAmount);
     }
 
-    const todayStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+    // Capture Date, Month, and Year from the dropdowns
+    const d = req.body.tx_date || new Date().getDate();
+    const m = req.body.tx_month || 'Oct';
+    const y = req.body.tx_year || '2026';
+    const dateStr = `${d} ${m} ${y}`;
+
+    const noteText = req.body.note ? req.body.note.trim() : `${m} ${y} Transaction`;
+
     tenant.history.push({
-        date: todayStr,
-        note: req.body.note,
+        date: dateStr,
+        note: noteText,
         amount: numAmount,
         type: txType,
         collector: req.body.collector
     });
 
     await tenant.save();
-    res.redirect(`/tenant/${tenant._id}?invoice=true&amt=${numAmount}&note=${encodeURIComponent(req.body.note)}&col=${encodeURIComponent(req.body.collector)}&due=${tenant.due}`);
+    res.redirect(`/tenant/${tenant._id}?invoice=true&amt=${numAmount}&note=${encodeURIComponent(noteText)}&col=${encodeURIComponent(req.body.collector)}&due=${tenant.due}`);
 });
 
 app.listen(PORT, () => {
