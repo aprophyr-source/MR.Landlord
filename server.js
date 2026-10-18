@@ -16,6 +16,40 @@ mongoose.connect(MONGO_URI)
     .then(() => console.log("Connected to Permanent Cloud Database!"))
     .catch(err => console.error("Database connection error:", err));
 
+// --- PWA INSTALL ROUTES (Manifest + Service Worker) ---
+app.get('/manifest.json', (req, res) => {
+    res.json({
+        name: "MR.Landlord Rental Manager",
+        short_name: "MR.Landlord",
+        start_url: "/",
+        display: "standalone",
+        background_color: "#f3f4f6",
+        theme_color: "#2563eb",
+        icons: [
+            {
+                src: "https://cdn-icons-png.flaticon.com/512/602/602175.png",
+                sizes: "512x512",
+                type: "image/png",
+                purpose: "any maskable"
+            },
+            {
+                src: "https://cdn-icons-png.flaticon.com/512/602/602175.png",
+                sizes: "192x192",
+                type: "image/png"
+            }
+        ]
+    });
+});
+
+app.get('/sw.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.send(`
+        self.addEventListener('install', (e) => self.skipWaiting());
+        self.addEventListener('activate', (e) => self.clients.claim());
+        self.addEventListener('fetch', (e) => {});
+    `);
+});
+
 // Cloud Schemas
 const SettingsSchema = new mongoose.Schema({
     passcode: String,
@@ -49,7 +83,6 @@ const getCurrentYearMonth = () => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 };
 
-// Helper: Add a charge/due and automatically cancel out any existing Advance first
 const applyCharge = (tenant, chargeAmount) => {
     if (tenant.advance > 0) {
         if (tenant.advance >= chargeAmount) {
@@ -64,7 +97,6 @@ const applyCharge = (tenant, chargeAmount) => {
     }
 };
 
-// Helper: Add a payment/advance and automatically pay off any existing Due first
 const applyPayment = (tenant, paymentAmount) => {
     if (tenant.due > 0) {
         if (tenant.due >= paymentAmount) {
@@ -79,7 +111,6 @@ const applyPayment = (tenant, paymentAmount) => {
     }
 };
 
-// Helper: Reconcile any existing stuck balances where both due > 0 and advance > 0
 const reconcileExistingBalance = (tenant) => {
     if (tenant.due > 0 && tenant.advance > 0) {
         if (tenant.advance >= tenant.due) {
@@ -94,7 +125,6 @@ const reconcileExistingBalance = (tenant) => {
     return false;
 };
 
-// Automatic Monthly Rent Engine
 const syncMonthlyRent = async () => {
     const currentYM = getCurrentYearMonth();
     const [curYear, curMonth] = currentYM.split('-').map(Number);
@@ -140,7 +170,6 @@ const syncMonthlyRent = async () => {
     }
 };
 
-// Helper to normalize `_id` to `id` for EJS templates
 const formatDoc = (doc) => {
     if (!doc) return null;
     const obj = doc.toObject();
