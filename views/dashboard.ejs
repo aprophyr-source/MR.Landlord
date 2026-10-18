@@ -11,46 +11,40 @@
     <!-- Top Header Bar -->
     <header class="bg-blue-600 text-white shadow-md py-3 px-4 flex justify-between items-center">
         <h1 class="text-base font-bold">🏠 MR.Landlord / <%= settings.landlord_name %></h1>
-        <a href="/app" class="bg-blue-700 hover:bg-blue-800 px-3 py-1 rounded text-xs font-semibold">Home / होम</a>
+        <div class="space-x-2">
+            <a href="/app" class="bg-blue-700 hover:bg-blue-800 px-3 py-1.5 rounded text-xs font-semibold">Home / होम</a>
+            <a href="/lock" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-xs font-semibold">🔒 Lock / लॉक</a>
+        </div>
     </header>
 
     <div class="max-w-4xl mx-auto p-3 grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        <!-- Left Column: Tenant List -->
-        <div class="bg-white p-3 rounded-lg shadow border">
-            <h2 class="text-sm font-bold text-gray-700 mb-2 border-bottom pb-1">Tenants / किराएदार</h2>
+        <!-- Left Column: Tenant List & Add Button -->
+        <div class="bg-white p-3 rounded-lg shadow border space-y-3">
             
-            <!-- Add Tenant Form -->
-            <form action="/tenant/add" method="POST" class="mb-3 space-y-2 bg-gray-50 p-2 rounded border">
-                <input type="text" name="name" required placeholder="Tenant Name / नाम" class="w-full px-2 py-1 border rounded text-xs">
-                <div class="grid grid-cols-2 gap-2">
-                    <input type="text" name="room" required placeholder="Room / कमरा" class="w-full px-2 py-1 border rounded text-xs">
-                    <input type="text" name="phone" placeholder="Phone / फोन" class="w-full px-2 py-1 border rounded text-xs">
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                    <input type="number" name="monthly_rent" required placeholder="Monthly Rent / किराया" class="w-full px-2 py-1 border rounded text-xs">
-                    <input type="number" name="initial_due" placeholder="Initial Due / बकाया" class="w-full px-2 py-1 border rounded text-xs">
-                </div>
-                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 rounded text-xs">
-                    + Add Tenant / नया किराएदार जोड़ें
-                </button>
-            </form>
+            <!-- Medium-Sized Add Tenant Button -->
+            <button onclick="toggleAddTenantModal()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-md text-xs shadow flex items-center justify-center space-x-2">
+                <span class="text-sm">+</span>
+                <span>Add New Tenant / नया किराएदार जोड़ें</span>
+            </button>
 
+            <h2 class="text-xs font-bold text-gray-500 uppercase tracking-wider border-b pb-1">Tenants List / किराएदार सूची</h2>
+            
             <!-- Tenant Selection List -->
-            <div class="space-y-1.5 max-h-96 overflow-y-auto">
+            <div class="space-y-1.5 max-h-[480px] overflow-y-auto">
                 <% if (tenants.length === 0) { %>
-                    <p class="text-xs text-gray-500 text-center py-4">No tenants added yet.</p>
+                    <p class="text-xs text-gray-400 text-center py-4">No tenants added yet.</p>
                 <% } %>
                 <% tenants.forEach(t => { %>
-                    <a href="/tenant/<%= t.id %>" class="block p-2 rounded border transition <%= activeTenant && activeTenant.id === t.id ? 'bg-blue-50 border-blue-500 font-bold' : 'bg-white hover:bg-gray-50' %>">
+                    <a href="/tenant/<%= t.id %>" class="block p-2.5 rounded border transition <%= activeTenant && activeTenant.id === t.id ? 'bg-blue-50 border-blue-500 font-bold' : 'bg-white hover:bg-gray-50' %>">
                         <div class="flex justify-between items-center text-xs">
-                            <span class="text-blue-900"><%= t.name %> (<%= t.room %>)</span>
+                            <span class="text-blue-900 font-semibold"><%= t.name %> (<%= t.room %>)</span>
                             <% if (t.due > 0) { %>
                                 <span class="text-red-600 font-bold">Due: ₹<%= t.due %></span>
                             <% } else if (t.advance > 0) { %>
                                 <span class="text-green-600 font-bold">Adv: ₹<%= t.advance %></span>
                             <% } else { %>
-                                <span class="text-gray-500">Clear</span>
+                                <span class="text-gray-400">Clear</span>
                             <% } %>
                         </div>
                     </a>
@@ -64,8 +58,8 @@
                 <div class="bg-white p-4 rounded-lg shadow border relative">
                     
                     <!-- Delete Tenant Button -->
-                    <form action="/tenant/delete/<%= activeTenant.id %>" method="POST" onsubmit="return confirm('Delete tenant?');" class="absolute top-3 right-3">
-                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs font-bold">Delete</button>
+                    <form action="/tenant/delete/<%= activeTenant ? activeTenant.id : '' %>" method="POST" onsubmit="return confirm('Delete tenant?');" class="absolute top-4 right-4">
+                        <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-2.5 py-1 rounded text-xs font-bold">Delete</button>
                     </form>
 
                     <div class="mb-3">
@@ -89,7 +83,7 @@
                     <!-- Transaction Form with Date Dropdowns -->
                     <div class="bg-gray-50 p-3 rounded border mb-4">
                         <h3 class="text-xs font-bold text-gray-700 uppercase mb-2">Record Transaction / लेन-देन दर्ज करें</h3>
-                        <form action="/tenant/<%= activeTenant.id %>/transaction" method="POST" class="space-y-3">
+                        <form action="/tenant/<%= activeTenant ? activeTenant.id : '' %>/transaction" method="POST" class="space-y-3">
                             <div>
                                 <label class="block text-xs font-bold text-gray-700 mb-1">Amount (₹) / राशि</label>
                                 <input type="number" name="amount" required placeholder="e.g. 2000" class="w-full px-2.5 py-1.5 border rounded text-xs">
@@ -170,13 +164,68 @@
 
                 </div>
             <% } else { %>
-                <div class="bg-white p-8 rounded-lg shadow border text-center text-gray-400">
-                    <p class="text-sm">👈 Select a tenant from the left list to view ledger and record transactions.</p>
+                <div class="bg-white p-12 rounded-lg shadow border text-center text-gray-400 flex flex-col items-center justify-center h-full">
+                    <p class="text-sm font-semibold mb-1">👈 Select a tenant from the left</p>
+                    <p class="text-xs">Or click the green button above to add a new tenant.</p>
                 </div>
             <% } %>
         </div>
 
     </div>
 
+    <!-- Clean Modal for Adding Tenant -->
+    <div id="addTenantModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-3 z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-5 relative border">
+            <div class="flex justify-between items-center mb-4 border-bottom pb-2">
+                <h3 class="text-sm font-bold text-blue-900 uppercase">Add New Tenant / नया किराएदार जोड़ें</h3>
+                <button onclick="toggleAddTenantModal()" class="text-gray-400 hover:text-gray-700 font-bold text-lg">&times;</button>
+            </div>
+            
+            <form action="/tenant/add" method="POST" class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold text-gray-700 mb-1">Tenant Name / किराएदार का नाम</label>
+                    <input type="text" name="name" required placeholder="e.g. Ramesh Kumar" class="w-full px-3 py-2 border rounded text-xs">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Room No / कमरा नंबर</label>
+                        <input type="text" name="room" required placeholder="e.g. 101" class="w-full px-3 py-2 border rounded text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Phone / फोन नंबर</label>
+                        <input type="text" name="phone" placeholder="e.g. 9876543210" class="w-full px-3 py-2 border rounded text-xs">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Monthly Rent (₹) / मासिक किराया</label>
+                        <input type="number" name="monthly_rent" required placeholder="e.g. 3000" class="w-full px-3 py-2 border rounded text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Initial Due (₹) / शुरुआती बकाया</label>
+                        <input type="number" name="initial_due" placeholder="e.g. 0" class="w-full px-3 py-2 border rounded text-xs">
+                    </div>
+                </div>
+
+                <div class="flex space-x-2 pt-2">
+                    <button type="button" onclick="toggleAddTenantModal()" class="w-1/2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded text-xs">
+                        Cancel / रद्द करें
+                    </button>
+                    <button type="submit" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded text-xs shadow">
+                        Save Tenant / सेव करें
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function toggleAddTenantModal() {
+            const modal = document.getElementById('addTenantModal');
+            modal.classList.toggle('hidden');
+        }
+    </script>
 </body>
 </html>
