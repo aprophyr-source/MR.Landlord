@@ -38,7 +38,7 @@ const TenantSchema = new mongoose.Schema({
     monthly_rent: { type: Number, default: 0 },
     due: { type: Number, default: 0 },
     advance: { type: Number, default: 0 },
-    last_rent_month: { type: String, default: "" }, // Format: "YYYY-MM"
+    last_rent_month: { type: String, default: "" },
     history: [HistoryItemSchema]
 });
 const Tenant = mongoose.model('Tenant', TenantSchema);
@@ -94,7 +94,7 @@ const reconcileExistingBalance = (tenant) => {
     return false;
 };
 
-// Automatic Monthly Rent Engine: Checks if a new month has started and adds monthly_rent
+// Automatic Monthly Rent Engine
 const syncMonthlyRent = async () => {
     const currentYM = getCurrentYearMonth();
     const [curYear, curMonth] = currentYM.split('-').map(Number);
@@ -104,7 +104,6 @@ const syncMonthlyRent = async () => {
         let modified = reconcileExistingBalance(tenant);
 
         if (!tenant.last_rent_month) {
-            // Initialize existing tenants to current month so they aren't double-charged mid-month
             tenant.last_rent_month = currentYM;
             modified = true;
         } else if (tenant.last_rent_month < currentYM && tenant.monthly_rent > 0) {
@@ -194,6 +193,10 @@ app.get('/app', async (req, res) => {
     res.render('dashboard', { settings, tenants, activeTenant: null, history: [] });
 });
 
+app.get('/lock', async (req, res) => {
+    res.redirect('/');
+});
+
 app.post('/tenant/add', async (req, res) => {
     await Tenant.create({
         name: req.body.name,
@@ -239,7 +242,6 @@ app.post('/tenant/:id/transaction', async (req, res) => {
         applyCharge(tenant, numAmount);
     }
 
-    // Capture Date, Month, and Year from the dropdowns
     const d = req.body.tx_date || new Date().getDate();
     const m = req.body.tx_month || 'Oct';
     const y = req.body.tx_year || '2026';
