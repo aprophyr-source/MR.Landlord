@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MR.Landlord Dashboard</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/602/602175.png">
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen text-gray-800">
@@ -11,7 +14,11 @@
     <!-- Top Header Bar -->
     <header class="bg-blue-600 text-white shadow-md py-3 px-4 flex justify-between items-center">
         <h1 class="text-base font-bold">🏠 MR.Landlord / <%= settings.landlord_name %></h1>
-        <div class="space-x-2">
+        <div class="flex items-center space-x-2">
+            <!-- Install App Button (Appears automatically on mobile/Chrome) -->
+            <button id="installBtn" onclick="installPWA()" class="hidden bg-yellow-400 hover:bg-yellow-500 text-gray-900 px-3 py-1.5 rounded text-xs font-extrabold shadow">
+                📲 Install App
+            </button>
             <a href="/app" class="bg-blue-700 hover:bg-blue-800 px-3 py-1.5 rounded text-xs font-semibold">Home / होम</a>
             <a href="/lock" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-xs font-semibold">🔒 Lock / लॉक</a>
         </div>
@@ -225,6 +232,31 @@
         function toggleAddTenantModal() {
             const modal = document.getElementById('addTenantModal');
             modal.classList.toggle('hidden');
+        }
+
+        // Register Service Worker & Handle "Install App" Button
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js');
+        }
+
+        let deferredPrompt;
+        const installBtn = document.getElementById('installBtn');
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.classList.remove('hidden');
+        });
+
+        async function installPWA() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    installBtn.classList.add('hidden');
+                }
+                deferredPrompt = null;
+            }
         }
     </script>
 </body>
