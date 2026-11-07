@@ -5,8 +5,9 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+// 10mb limit allows uploading Bank QR code images directly from phone gallery
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
@@ -53,7 +54,9 @@ app.get('/sw.js', (req, res) => {
 // Cloud Schemas
 const SettingsSchema = new mongoose.Schema({
     passcode: String,
-    landlord_name: String
+    landlord_name: String,
+    upi_id: { type: String, default: "" },
+    qr_image: { type: String, default: "" } // Stores uploaded QR image in database
 });
 const Settings = mongoose.model('Settings', SettingsSchema);
 
@@ -62,7 +65,8 @@ const HistoryItemSchema = new mongoose.Schema({
     note: String,
     amount: Number,
     type: { type: String },
-    collector: String
+    collector: String,
+    payment_mode: { type: String, default: "Cash" } // Stores Cash or UPI
 }, { _id: false });
 
 const TenantSchema = new mongoose.Schema({
@@ -77,7 +81,7 @@ const TenantSchema = new mongoose.Schema({
 });
 const Tenant = mongoose.model('Tenant', TenantSchema);
 
-// Helper: Current Year-Month in IST (e.g. "2026-10")
+// Helper: Current Year-Month in IST
 const getCurrentYearMonth = () => {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -157,7 +161,8 @@ const syncMonthlyRent = async () => {
                     note: `Auto Monthly Rent (${monthLabel})`,
                     amount: tenant.monthly_rent,
                     type: 'charge',
-                    collector: 'System Auto'
+                    collector: 'System Auto',
+                    payment_mode: 'Auto'
                 });
             }
             tenant.last_rent_month = currentYM;
@@ -200,6 +205,18 @@ app.post('/setup', async (req, res) => {
         landlord_name: req.body.landlord_name
     });
     res.redirect('/');
+});
+
+// Save Uploaded Bank QR Image & UPI ID permanently in MongoDB
+app.post('/settings/qr', async (req, res) => {
+    const settings = await Settings.findOne();
+    if (settings) {
+        if (req.body.upi_id !== undefined) settings.upi_id = req.body.upi_id.trim();
+        if (req.body.qr_image) settings.qr_image = req.body.qr_image;
+        await settings.save();
+    }
+    const returnUrl = req.body.return_to || '/app';
+    res.redirect(returnUrl);
 });
 
 app.post('/dashboard', async (req, res) => {
@@ -264,6 +281,7 @@ app.post('/tenant/:id/transaction', async (req, res) => {
 
     const numAmount = parseInt(req.body.amount) || 0;
     const txType = req.body.type;
+    const paymentMode = req.body.payment_mode || 'Cash';
 
     if (txType === 'payment') {
         applyPayment(tenant, numAmount);
@@ -272,22 +290,24 @@ app.post('/tenant/:id/transaction', async (req, res) => {
     }
 
     const d = req.body.tx_date || new Date().getDate();
-    const m = req.body.tx_month || 'Oct';
+    const m = req.body.tx_month || 'Nov';
     const y = req.body.tx_year || '2026';
     const dateStr = `${d} ${m} ${y}`;
 
-    const noteText = req.body.note ? req.body.note.trim() : `${m} ${y} Transaction`;
+    const baseNote = req.body.note ? req.body.note.trim() : `${m} ${y} ${txType === 'payment' ? 'Payment' : 'Charge'}`;
+    const finalNote = txType === 'payment' ? `${baseNote} [Paid via ${paymentMode}]` : baseNote;
 
     tenant.history.push({
         date: dateStr,
-        note: noteText,
+        note: finalNote,
         amount: numAmount,
         type: txType,
-        collector: req.body.collector
+        collector: req.body.collector,
+        payment_mode: paymentMode
     });
 
     await tenant.save();
-    res.redirect(`/tenant/${tenant._id}?invoice=true&amt=${numAmount}&note=${encodeURIComponent(noteText)}&col=${encodeURIComponent(req.body.collector)}&due=${tenant.due}`);
+    res.redirect(`/tenant/${tenant._id}?invoice=true&amt=${numAmount}&note=${encodeURIComponent(finalNote)}&col=${encodeURIComponent(req.body.collector)}&due=${tenant.due}`);
 });
 
 app.listen(PORT, () => {
