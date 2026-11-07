@@ -14,6 +14,7 @@
     <header class="bg-blue-600 text-white shadow-md py-3 px-4 flex justify-between items-center sticky top-0 z-40">
         <h1 class="text-sm font-extrabold tracking-wide">🏠 MR.Landlord / <%= settings.landlord_name %></h1>
         <div class="flex items-center space-x-2">
+            <button onclick="toggleSettingsModal()" class="bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded text-xs font-bold">⚙️ Setup QR</button>
             <a href="/app" class="bg-blue-700 hover:bg-blue-800 px-3 py-1.5 rounded text-xs font-bold">🏠 Home</a>
             <a href="/lock" class="bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded text-xs font-bold">🔒 Lock</a>
         </div>
@@ -96,15 +97,6 @@
                             <span class="text-xl font-black text-green-600">₹<%= activeTenant.advance %></span>
                         </div>
                     </div>
-
-                    <!-- Quick QR Code Payment Button -->
-                    <% if (activeTenant.phone) { %>
-                        <div class="mt-3">
-                            <button onclick="toggleQRModal()" class="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold py-2 px-3 rounded-xl text-xs flex items-center justify-center space-x-2">
-                                <span>📱 Show UPI QR Code for Payment / क्यूआर कोड दिखाएं</span>
-                            </button>
-                        </div>
-                    <% } %>
                 </div>
 
                 <!-- BIG ACTION TABS: Switch between Recording Transaction & Viewing Records -->
@@ -117,9 +109,9 @@
                     </button>
                 </div>
 
-                <!-- TAB 1: RECORD TRANSACTION FORM (Protected against double click) -->
-                <div id="tabTxContent" class="bg-white p-4 rounded-xl shadow-sm border">
-                    <h3 class="text-xs font-extrabold text-gray-700 uppercase mb-3 pb-1 border-b">New Payment / Charge Entry</h3>
+                <!-- TAB 1: RECORD TRANSACTION FORM -->
+                <div id="tabTxContent" class="bg-white p-4 rounded-xl shadow-sm border space-y-3">
+                    <h3 class="text-xs font-extrabold text-gray-700 uppercase pb-1 border-b">New Payment / Charge Entry</h3>
                     
                     <form action="/tenant/<%= activeTenant.id %>/transaction" method="POST" class="space-y-3" onsubmit="handleFormSubmit(this)">
                         <div>
@@ -135,6 +127,29 @@
                             </select>
                         </div>
 
+                        <!-- Payment Mode Buttons: Cash vs UPI QR -->
+                        <div>
+                            <label class="block text-xs font-bold text-gray-700 mb-1.5">Payment Mode / भुगतान माध्यम</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button type="button" onclick="setPaymentMode('Cash')" id="modeCash" class="py-2.5 px-3 border-2 border-blue-600 bg-blue-50 text-blue-900 rounded-xl text-xs font-extrabold transition">
+                                    💵 Cash Paid / नकद
+                                </button>
+                                <button type="button" onclick="setPaymentMode('UPI')" id="modeUpi" class="py-2.5 px-3 border-2 border-gray-200 bg-white text-gray-700 rounded-xl text-xs font-extrabold transition">
+                                    📱 UPI / Scan QR
+                                </button>
+                            </div>
+                            <!-- Hidden input to track cash vs upi selection -->
+                            <input type="hidden" name="payment_mode" id="paymentModeInput" value="Cash">
+                        </div>
+
+                        <!-- UPI QR Trigger Box (Only shows if UPI is selected) -->
+                        <div id="upiSection" class="hidden bg-purple-50 border border-purple-200 p-3 rounded-xl text-center space-y-2">
+                            <p class="text-xs font-extrabold text-purple-900">Scan UPI QR Code to Collect Payment</p>
+                            <button type="button" onclick="toggleQRModal()" class="bg-purple-600 hover:bg-purple-700 text-white font-extrabold py-2 px-4 rounded-xl text-xs shadow">
+                                📷 Show Saved QR Code
+                            </button>
+                        </div>
+
                         <div>
                             <label class="block text-xs font-bold text-gray-700 mb-1">Collected By / किसने लिया</label>
                             <select name="collector" class="w-full px-3 py-2 border rounded-xl text-xs bg-white font-bold text-blue-900">
@@ -147,7 +162,7 @@
 
                         <!-- Backdated Date Dropdowns -->
                         <div>
-                            <label class="block text-xs font-bold text-gray-700 mb-1">Transaction Date / लेनदेन की तिथि (Backdated OK)</label>
+                            <label class="block text-xs font-bold text-gray-700 mb-1">Transaction Date / लेनदेन की तिथि</label>
                             <div class="grid grid-cols-3 gap-2">
                                 <select name="tx_date" class="px-2 py-2 border rounded-xl text-xs bg-white font-bold">
                                     <% for(let d=1; d<=31; d++) { %>
@@ -172,7 +187,7 @@
 
                         <div>
                             <label class="block text-xs font-bold text-gray-700 mb-1">Note / विवरण (Optional)</label>
-                            <input type="text" name="note" placeholder="e.g. October Rent / Current Bill" class="w-full px-3 py-2 border rounded-xl text-xs bg-gray-50 focus:bg-white">
+                            <input type="text" name="note" placeholder="e.g. October Rent" class="w-full px-3 py-2 border rounded-xl text-xs bg-gray-50 focus:bg-white">
                         </div>
 
                         <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-3 rounded-xl text-sm shadow-md transition">
@@ -255,35 +270,90 @@
         </div>
     </div>
 
-    <!-- Modal for UPI QR Code -->
-    <% if (activeTenant) { %>
+    <!-- Modal for Setup/Saving UPI QR Code Image link -->
+    <div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-3 z-50">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 relative border space-y-3">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h3 class="text-xs font-extrabold text-blue-900 uppercase">Setup UPI QR Code / क्यूआर सेट करें</h3>
+                <button onclick="toggleSettingsModal()" class="text-gray-400 hover:text-gray-700 font-bold text-xl">&times;</button>
+            </div>
+            <p class="text-xs text-gray-600">Paste the direct image link of your PhonePe/GooglePay QR code, or upload it to imgur/WhatsApp and paste image URL here:</p>
+            
+            <input type="text" id="upiQrUrlInput" placeholder="https://example.com/my-qr.jpg" class="w-full px-3 py-2 border rounded-xl text-xs font-bold">
+            
+            <button onclick="saveUpiQR()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold py-2.5 rounded-xl text-xs shadow">
+                Save QR Code Link
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal to Display Saved UPI QR Code -->
     <div id="qrModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center p-3 z-50">
         <div class="bg-white rounded-2xl shadow-2xl max-w-xs w-full p-5 text-center relative border space-y-3">
             <div class="flex justify-between items-center border-b pb-2">
                 <h3 class="text-xs font-extrabold text-purple-900 uppercase">Scan to Pay via UPI</h3>
                 <button onclick="toggleQRModal()" class="text-gray-400 hover:text-gray-700 font-bold text-xl">&times;</button>
             </div>
-            <p class="text-xs font-bold text-gray-800"><%= activeTenant.name %> (Room <%= activeTenant.room %>)</p>
             
-            <!-- Dynamic UPI QR generated via free public API -->
-            <div class="bg-gray-50 p-3 rounded-xl border inline-block">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=upi://pay?pa=landlord@upi&pn=<%= encodeURIComponent(settings.landlord_name) %>&am=<%= activeTenant.monthly_rent %>&cu=INR" alt="UPI QR Code" class="mx-auto rounded">
+            <!-- Display User's Saved QR or prompt to set it up -->
+            <div id="qrDisplayContainer" class="bg-gray-50 p-3 rounded-xl border inline-block min-h-[160px] flex items-center justify-center">
+                <p class="text-xs text-red-500 font-bold" id="noQrText">No QR Code set up yet! Click 'Setup QR' at the top right.</p>
             </div>
 
-            <p class="text-[10px] text-gray-500">Scan with Google Pay, PhonePe, or Paytm to pay monthly rent of ₹<%= activeTenant.monthly_rent %>.</p>
             <button onclick="toggleQRModal()" class="w-full bg-purple-600 text-white font-extrabold py-2 rounded-xl text-xs shadow">Close</button>
         </div>
     </div>
-    <% } %>
 
     <script>
         function toggleAddTenantModal() {
             document.getElementById('addTenantModal').classList.toggle('hidden');
         }
 
+        function toggleSettingsModal() {
+            document.getElementById('settingsModal').classList.toggle('hidden');
+            const saved = localStorage.getItem('landlord_upi_qr');
+            if (saved) document.getElementById('upiQrUrlInput').value = saved;
+        }
+
+        function saveUpiQR() {
+            const url = document.getElementById('upiQrUrlInput').value.trim();
+            if (url) {
+                localStorage.setItem('landlord_upi_qr', url);
+                alert('UPI QR Link Saved Successfully!');
+                toggleSettingsModal();
+            }
+        }
+
         function toggleQRModal() {
             const modal = document.getElementById('qrModal');
-            if(modal) modal.classList.toggle('hidden');
+            modal.classList.toggle('hidden');
+            
+            const container = document.getElementById('qrDisplayContainer');
+            const savedUrl = localStorage.getItem('landlord_upi_qr');
+            
+            if (savedUrl) {
+                container.innerHTML = `<img src="${savedUrl}" alt="UPI QR Code" class="mx-auto rounded max-h-48 object-contain">`;
+            } else {
+                container.innerHTML = `<p class="text-xs text-red-500 font-bold">No QR Code set up yet! Click '⚙️ Setup QR' at the top right of the app first.</p>`;
+            }
+        }
+
+        // Payment Mode Toggle (Cash vs UPI)
+        function setPaymentMode(mode) {
+            document.getElementById('paymentModeInput').value = mode;
+            const cashBtn = document.getElementById('modeCash');
+            const upiBtn = document.getElementById('modeUpi');
+            const upiSection = document.getElementById('upiSection');
+
+            if (mode === 'Cash') {
+                cashBtn.className = "py-2.5 px-3 border-2 border-blue-600 bg-blue-50 text-blue-900 rounded-xl text-xs font-extrabold transition";
+                upiBtn.className = "py-2.5 px-3 border-2 border-gray-200 bg-white text-gray-700 rounded-xl text-xs font-extrabold transition";
+                upiSection.classList.add('hidden');
+            } else {
+                upiBtn.className = "py-2.5 px-3 border-2 border-purple-600 bg-purple-50 text-purple-900 rounded-xl text-xs font-extrabold transition";
+                cashBtn.className = "py-2.5 px-3 border-2 border-gray-200 bg-white text-gray-700 rounded-xl text-xs font-extrabold transition";
+                upiSection.classList.remove('hidden');
+            }
         }
 
         // Tab Switcher for Big UI Layout
